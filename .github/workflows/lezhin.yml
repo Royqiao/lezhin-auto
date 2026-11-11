@@ -1,1 +1,33 @@
+name: Lezhin Auto
 
+on:
+  #schedule:
+    # 每天在北京时间 21:00 (对应 UTC 13:00) 执行一次
+    #- cron: '0 13 * * *'
+  workflow_dispatch: # 支持手动在网页点击运行
+
+jobs:
+  lezhin-task:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          playwright install chromium
+          
+      - name: Run Lezhin
+        env:
+          TARGET_PLATFORM: "lezhin" # ⚠️ 重点：这里告诉脚本只跑 Lezhin
+          LEZHIN_USER: ${{ secrets.LEZHIN_USER }}
+          LEZHIN_PASS: ${{ secrets.LEZHIN_PASS }}
+          SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
+          SENDER_PASS: ${{ secrets.SENDER_PASS }}
+          RECEIVER_EMAIL: ${{ secrets.RECEIVER_EMAIL }}
+        run: python main.py
