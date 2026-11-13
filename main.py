@@ -60,7 +60,6 @@ def task_lezhin(page):
             page.fill('input#password', LEZHIN_PASS, timeout=10000)
         except Exception as e:
             print(f"❌ [Lezhin] 找不到输入框: {e}")
-            page.screenshot(path="lezhin_login_error.png")
             return
 
         # 3. 点击登录按钮
@@ -73,14 +72,10 @@ def task_lezhin(page):
         page.wait_for_timeout(8000)
 
         if "login" in page.url:
-            print("❌ [Lezhin] 登录失败（仍停留在登录页）。可能触发验证码或账号密码错误。")
-            page.screenshot(path="lezhin_login_fail.png")
-            send_email("[Lezhin] 登录失败", "请查看截图，可能是账号密码错误或触发了验证码。", "lezhin_login_fail.png")
+            print("❌ [Lezhin] 登录失败（仍停留在登录页）。")
             return
 
         print("✅ [Lezhin] 登录成功！")
-        
-        # 模拟真实用户：登录后停留几秒等页面渲染
         page.wait_for_timeout(5000) 
         
         # ==========================================
@@ -90,20 +85,17 @@ def task_lezhin(page):
         click_success = False
         
         try:
-            # 寻找汉堡菜单按钮
             menu_btn = page.locator(
                 'button:has(span.a11y:text-is("메뉴")), '
                 'button[aria-label="메뉴"], '
                 'header button:has(svg)'
             ).first
             
-            # 极短的等待时间，找不到就立马走兜底逻辑
             if menu_btn.is_visible(timeout=3000):
                 menu_btn.click(timeout=5000, force=True)
-                print("[Lezhin] 菜单已展开，等待侧边栏加载...")
+                print("[Lezhin] 菜单已展开...")
                 page.wait_for_timeout(2000)
                 
-                # 找侧边栏的签到入口并点击
                 attendance_link = page.locator('a[href*="/arcade/attendance"], a:has-text("출석하기")').first
                 if attendance_link.is_visible(timeout=3000):
                     attendance_link.click(timeout=5000, force=True)
@@ -111,62 +103,68 @@ def task_lezhin(page):
                     click_success = True
                     page.wait_for_timeout(5000)
         except Exception as e:
-            print(f"⚠️ [Lezhin] 点击查找失败，准备使用兜底方案跳转: {e}")
+            print(f"⚠️ [Lezhin] 点击查找失败: {e}")
 
-        # 兜底方案：如果因为页面没加载出菜单等原因没点进去，直接输入网址跳转
         if not click_success:
             print("[Lezhin] 启用兜底方案，直接访问签到页链接...")
             page.goto("https://www.lezhin.com/ko/arcade/attendance", timeout=60000)
             page.wait_for_timeout(5000)
 
         # ==========================================
-        # 5. 精准判断签到状态并执行
+        # 5. 精准判断签到状态并执行 (加强重试逻辑)
         # ==========================================
         print("[Lezhin] 已进入签到页面，正在检查今日签到状态...")
-        try:
-            # 定位最终的黄色/灰色大按钮
-            check_btn = page.locator('button.attendance_ctaButton__gbAuj, button[class*="attendance_ctaButton"]').first
-            
-            if check_btn.is_visible():
-                btn_text = check_btn.inner_text().strip()
-                print(f"[Lezhin] 识别到签到大按钮文本: '{btn_text}'")
+        
+        check_btn = None
+        # 最多重试 5 次，每次等 3 秒，给足页面渲染时间
+        for attempt in range(5):
+            try:
+                # 放弃死板的 class，改为文本与 class 双重结合匹配
+                btn_locator = page.locator('button:has-text("출석하기"), button:has-text("오늘 출석 완료"), button[class*="attendance_ctaButton"]').first
                 
-                # 状态 A：已经签到过了
-                if "오늘 출석 완료" in btn_text or "완료" in btn_text:
-                    print("ℹ️ [Lezhin] 页面显示今日已签到，无需重复点击，直接结束任务。")
-                    return
-                
-                # 状态 B：还未签到，执行点击
-                elif "출석하기" in btn_text:
-                    print("✅ [Lezhin] 检测到未签到，正在执行点击...")
-                    page.wait_for_timeout(1000) 
-                    check_btn.click(timeout=10000)
-                    page.wait_for_timeout(3000) 
-                    
-                    print("🎉 [Lezhin] 签到成功！")
-                    page.screenshot(path="lezhin_success.png", full_page=True)
-                    send_email("[Lezhin] 每日签到成功", "今天的 Lezhin 签到已完成，详情见附图。", "lezhin_success.png")
-                    return
-                
-                # 状态 C：未知文本（防止网站改版导致卡死）
+                if btn_locator.is_visible(timeout=3000):
+                    check_btn = btn_locator
+                    break
                 else:
-                    print(f"⚠️ [Lezhin] 遇到未知按钮文本: '{btn_text}'，尝试强制点击...")
-                    check_btn.click(timeout=10000, force=True)
+                    print(f"⏳ 签到按钮还没加载出来，等待 3 秒后重试 ({attempt+1}/5)...")
                     page.wait_for_timeout(3000)
-                    page.screenshot(path="lezhin_unknown.png", full_page=True)
-                    send_email("[Lezhin] 签到异常", f"遇到未知按钮状态（文本：{btn_text}），已尝试强制点击，请查看附图。", "lezhin_unknown.png")
-                    return
-            else:
-                print("❌ [Lezhin] 未能找到最终的签到按钮。")
+            except Exception:
+                page.wait_for_timeout(3000)
+
+        if check_btn:
+            btn_text = check_btn.inner_text().strip()
+            print(f"[Lezhin] 识别到签到大按钮文本: '{btn_text}'")
+            
+            if "오늘 출석 완료" in btn_text or "완료" in btn_text:
+                print("ℹ️ [Lezhin] 页面显示今日已签到，无需重复点击，直接结束任务。")
+                return
+            
+            elif "출석하기" in btn_text:
+                print("✅ [Lezhin] 检测到未签到，正在执行点击...")
+                page.wait_for_timeout(1000) 
+                check_btn.click(timeout=10000)
+                page.wait_for_timeout(3000) 
                 
-        except Exception as e:
-            print(f"❌ [Lezhin] 签到按钮处理出错: {e}")
-            page.screenshot(path="lezhin_result_error.png")
+                print("🎉 [Lezhin] 签到成功！")
+                page.screenshot(path="lezhin_success.png", full_page=True)
+                send_email("[Lezhin] 每日签到成功", "今天的 Lezhin 签到已完成，详情见附图。", "lezhin_success.png")
+                return
+            else:
+                print(f"⚠️ [Lezhin] 遇到未知按钮文本: '{btn_text}'，尝试强制点击...")
+                check_btn.click(timeout=10000, force=True)
+                page.wait_for_timeout(3000)
+                page.screenshot(path="lezhin_unknown.png", full_page=True)
+                send_email("[Lezhin] 签到异常", f"未知按钮状态（文本：{btn_text}），已强制点击，请查看附图。", "lezhin_unknown.png")
+                return
+        else:
+            # 如果重试了5次还找不到，截图并发邮件报警
+            print("❌ [Lezhin] 重试多次依然未能找到最终的签到按钮。保存截图...")
+            page.screenshot(path="lezhin_btn_not_found.png", full_page=True)
+            send_email("[Lezhin] 签到失败：找不到按钮", "页面已跳转到签到页，但未能找到签到按钮，请查看附图确认页面状态。", "lezhin_btn_not_found.png")
 
     except Exception as e:
         print(f"❌ [Lezhin] 执行异常: {e}")
         page.screenshot(path="lezhin_error.png")
-
 
 # ================= 主程序入口 =================
 def main():
