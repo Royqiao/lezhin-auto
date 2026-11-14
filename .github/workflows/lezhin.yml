@@ -1,9 +1,9 @@
 name: Lezhin Auto 
 
 on:
-   #schedule:
+   schedule:
     # 每天 UTC 13:00 (对应北京时间 21:00) 执行
-    # - cron: '0 13 * * *'
+     - cron: '0 13 * * *'
   workflow_dispatch: # 支持手动触发测试
 
 jobs:
