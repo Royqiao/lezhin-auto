@@ -1,27 +1,24 @@
-name: Lezhin Auto 
+name: Lezhin Auto Check-in
 
 on:
-   schedule:
+  schedule:
     # 每天 UTC 13:00 (对应北京时间 21:00) 执行
-     - cron: '0 13 * * *'
-  workflow_dispatch: # 支持手动触发测试
+    - cron: '0 13 * * *'
+  workflow_dispatch: 
 
 jobs:
   lezhin-task:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
-          
       - name: Install dependencies
         run: |
           pip install -r requirements.txt
           playwright install chromium
-          
       - name: Run Lezhin Check-in
         env:
           LEZHIN_USER: ${{ secrets.LEZHIN_USER }}
