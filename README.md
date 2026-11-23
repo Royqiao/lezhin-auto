@@ -1,2 +1,2 @@
 # lezhin-auto
-lezhin check in 
+lezhin
